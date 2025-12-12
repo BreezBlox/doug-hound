@@ -30,7 +30,12 @@ const Index = () => {
   };
   // Remove interval state, add selectedMonths
   const [selectedMonths, setSelectedMonths] = useState<number[]>([new Date().getMonth()]);
-  
+  const [selectedYears, setSelectedYears] = useState<number[]>([new Date().getFullYear()]);
+
+  // Calculate distinct years from reserves for selection
+  const availableYears = Array.from(new Set(reserves.map(r => r.date.getFullYear()))).sort();
+
+
   // Calculate reserves when entries or selectedDate change
   // Only use visible entries for forecast/graph/export
   const visibleEntries = entries.filter(e => !hiddenIds.includes(e.id));
@@ -48,7 +53,7 @@ const Index = () => {
   }, [entries, selectedDate, hiddenIds]);
 
   // Handle form submission
-  
+
   // Handle form submission
   const handleEntrySubmit = (newEntry: Omit<FinancialEntry, 'id'>) => {
     const entryWithId: FinancialEntry = {
@@ -62,7 +67,7 @@ const Index = () => {
   const handleCsvImport = (imported: FinancialEntry[]) => {
     setEntries(prev => [...prev, ...imported]);
   };
-  
+
   // Edit entry logic
   const [editingEntry, setEditingEntry] = useState<FinancialEntry | null>(null);
 
@@ -81,7 +86,7 @@ const Index = () => {
   };
   // Cancel edit
   const handleCancelEdit = () => setEditingEntry(null);
-  
+
 
   // Load entries from localStorage on mount
   useEffect(() => {
@@ -95,7 +100,7 @@ const Index = () => {
       setEntries(parsedEntries);
     }
   }, []);
-  
+
   // Save entries to localStorage when they change
   useEffect(() => {
     localStorage.setItem('financialEntries', JSON.stringify(entries));
@@ -118,7 +123,7 @@ const Index = () => {
       </header>
       <OnboardingHint onShow={() => setShowOnboarding(true)} />
       <OnboardingDialog open={showOnboarding} onClose={() => setShowOnboarding(false)} />
-      
+
       <div className="flex flex-col md:flex-row gap-4 md:gap-6">
         {/* Left Panel - Bar Graph */}
         <div className="w-full md:w-3/5 bg-opacity-30 border border-mgs-green p-2 sm:p-4 animate-fade-in flex flex-col items-center justify-center min-h-[250px] sm:min-h-[350px] md:min-h-[550px]">
@@ -146,12 +151,33 @@ const Index = () => {
               </label>
             ))}
           </div>
+          {/* Year Selection Checkboxes */}
+          <div className="flex flex-wrap gap-2 justify-center mb-4">
+            {availableYears.map(year => (
+              <label key={year} className={`px-2 py-1 rounded font-orbitron border text-xs sm:text-sm transition-colors cursor-pointer ${selectedYears.includes(year) ? 'bg-mgs-green text-mgs-black border-mgs-green' : 'bg-mgs-black text-mgs-green border-mgs-green hover:bg-mgs-green/30'}`}>
+                <input
+                  type="checkbox"
+                  checked={selectedYears.includes(year)}
+                  onChange={e => {
+                    setSelectedYears(prev =>
+                      e.target.checked
+                        ? [...prev, year]
+                        : prev.filter(y => y !== year)
+                    );
+                  }}
+                  className="mr-1 accent-mgs-green"
+                  style={{ display: 'inline-block' }}
+                />
+                {year}
+              </label>
+            ))}
+          </div>
           <div className="w-full flex-1 flex items-center justify-center overflow-x-auto">
             <LineGraph
               data={reserves
                 .filter(r =>
                   selectedMonths.includes(r.date.getMonth()) &&
-                  r.date.getFullYear() === new Date().getFullYear()
+                  selectedYears.includes(r.date.getFullYear())
                 )
                 .sort((a, b) => a.date.getTime() - b.date.getTime())
               }
@@ -162,7 +188,7 @@ const Index = () => {
           </div>
 
           {/* Export Forecast Button */}
-           <div className="flex justify-center mt-4">
+          <div className="flex justify-center mt-4 gap-4">
             <button
               className="px-4 py-2 rounded font-orbitron border text-xs sm:text-sm bg-mgs-green text-mgs-black border-mgs-green hover:bg-mgs-green/80 transition-colors"
               onClick={() => {
@@ -212,13 +238,44 @@ const Index = () => {
                 }, 100);
               }}
             >
-              Export Forecast
+              Export Detailed Forecast
+            </button>
+            <button
+              className="px-4 py-2 rounded font-orbitron border text-xs sm:text-sm bg-mgs-black text-mgs-green border-mgs-green hover:bg-mgs-green/30 transition-colors"
+              onClick={() => {
+                // Filter reserves same as graph
+                const graphData = reserves
+                  .filter(r =>
+                    selectedMonths.includes(r.date.getMonth()) &&
+                    selectedYears.includes(r.date.getFullYear())
+                  )
+                  .sort((a, b) => a.date.getTime() - b.date.getTime());
+
+                let csv = 'Date,Balance\n';
+                graphData.forEach(r => {
+                  csv += `${r.date.toISOString().slice(0, 10)},${r.reserve}\n`;
+                });
+
+                const blob = new Blob([csv], { type: 'text/csv' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'graph_data.csv';
+                document.body.appendChild(a);
+                a.click();
+                setTimeout(() => {
+                  document.body.removeChild(a);
+                  URL.revokeObjectURL(url);
+                }, 100);
+              }}
+            >
+              Export Graph Data
             </button>
           </div>
-          
+
           <div className="mt-6">
             <h3 className="font-orbitron text-mgs-green text-sm mb-3 border-b border-mgs-gray pb-2">Operations Log</h3>
-            <EntryList 
+            <EntryList
               entries={entries}
               onDeleteEntry={handleDeleteEntry}
               onEditEntry={handleEditEntry}
@@ -230,29 +287,29 @@ const Index = () => {
             />
           </div>
         </div>
-        
+
         {/* Right Panel - Forms */}
         <div className="w-full md:w-2/5 bg-opacity-30 border border-mgs-green p-2 sm:p-4 animate-fade-in">
           <h2 className="font-orbitron text-lg text-center mb-4 pb-2 border-b border-mgs-green">
             Intel Input Terminal
           </h2>
-          
+
           <CsvImport onImport={handleCsvImport} />
           <div>
             <h3 className="font-orbitron text-sm text-center mb-2">
               Selected Date: {formatDateToMonthDayYear(selectedDate)}
             </h3>
-            <Calendar 
+            <Calendar
               selectedDate={selectedDate}
               onDateSelect={setSelectedDate}
             />
           </div>
-          
+
           <div className="flex justify-center gap-6 mb-4 border-t border-b border-mgs-gray py-3">
             <label className="flex items-center cursor-pointer">
-              <input 
-                type="radio" 
-                name="entryType" 
+              <input
+                type="radio"
+                name="entryType"
                 checked={entryType === "bill"}
                 onChange={() => setEntryType("bill")}
                 className="appearance-none w-5 h-5 border-2 border-mgs-gray rounded-full relative cursor-pointer checked:border-mgs-green before:content-[''] before:block before:absolute before:w-3 before:h-3 before:top-1/2 before:left-1/2 before:-translate-x-1/2 before:-translate-y-1/2 before:rounded-full before:bg-mgs-green before:scale-0 checked:before:scale-100 before:transition-transform"
@@ -262,9 +319,9 @@ const Index = () => {
               </span>
             </label>
             <label className="flex items-center cursor-pointer">
-              <input 
-                type="radio" 
-                name="entryType" 
+              <input
+                type="radio"
+                name="entryType"
                 checked={entryType === "paycheck"}
                 onChange={() => setEntryType("paycheck")}
                 className="appearance-none w-5 h-5 border-2 border-mgs-gray rounded-full relative cursor-pointer checked:border-mgs-green before:content-[''] before:block before:absolute before:w-3 before:h-3 before:top-1/2 before:left-1/2 before:-translate-x-1/2 before:-translate-y-1/2 before:rounded-full before:bg-mgs-green before:scale-0 checked:before:scale-100 before:transition-transform"
@@ -275,26 +332,26 @@ const Index = () => {
             </label>
             <PurchaseRadio checked={entryType === "purchase"} onChange={() => setEntryType("purchase")} />
           </div>
-          
+
           {entryType === "bill" ? (
-            <BillForm 
+            <BillForm
               selectedDate={selectedDate}
               onSubmit={handleEntrySubmit}
             />
           ) : entryType === "paycheck" ? (
-            <PaycheckForm 
+            <PaycheckForm
               selectedDate={selectedDate}
               onSubmit={handleEntrySubmit}
             />
           ) : (
-            <PurchaseForm 
+            <PurchaseForm
               selectedDate={selectedDate}
               onSubmit={handleEntrySubmit}
             />
           )}
         </div>
       </div>
-      
+
       <footer className="mt-8 py-4 border-t border-mgs-gray text-center text-xs text-mgs-lightgray">
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
           <span style={{ fontFamily: 'monospace', fontSize: 24, marginLeft: 24 }}>|‖‖‖‖‖|</span>

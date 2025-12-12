@@ -24,18 +24,55 @@ const CsvImport: React.FC<CsvImportProps> = ({ onImport }) => {
       complete: (results) => {
         const entries: FinancialEntry[] = [];
         for (const row of results.data as any[]) {
+          // Required fields validation
           if (!row.type || !row.name || !row.amount || !row.date || !row.frequency) continue;
-          if (row.type !== "bill" && row.type !== "paycheck" && row.type !== "purchase") continue;
+
+          // Validate and parse type
+          const typeLower = row.type.toLowerCase().trim();
+          if (typeLower !== "bill" && typeLower !== "paycheck" && typeLower !== "purchase") continue;
+
+          // Parse amount
           const amount = parseFloat(row.amount);
           if (isNaN(amount)) continue;
+
+          // Parse required date
           const date = parseLocalDateString(row.date);
+
+          // Parse optional fields
+          let occurrenceLimit: number | undefined = undefined;
+          if (row.occurrence) {
+            const parsedLimit = parseInt(row.occurrence, 10);
+            if (!isNaN(parsedLimit) && parsedLimit > 0) occurrenceLimit = parsedLimit;
+          }
+
+          let stopDate: Date | undefined = undefined;
+          if (row.stopDate && row.stopDate.trim() !== '') {
+            stopDate = parseLocalDateString(row.stopDate);
+            // invalidate if invalid date
+            if (isNaN(stopDate.getTime())) stopDate = undefined;
+          }
+
+          let customDates: string[] | undefined = undefined;
+          if (row.customDates && row.customDates.trim() !== '') {
+            // Assume space or comma separated
+            customDates = row.customDates.split(/[ ,]+/).map((d: string) => {
+              // Try to normalize to keep simple text or validate? 
+              // For now just keep the raw strings, assuming user follows format.
+              // Ideally validation could happen here.
+              return d.trim();
+            }).filter((d: string) => d.length > 0);
+          }
+
           entries.push({
             id: uuidv4(),
-            type: row.type,
+            type: typeLower as any,
             name: row.name,
             amount,
             date,
-            frequency: row.frequency
+            frequency: row.frequency,
+            occurrenceLimit,
+            stopDate,
+            customDates
           });
         }
         console.log("CSV parsed entries:", entries);
@@ -67,12 +104,14 @@ const CsvImport: React.FC<CsvImportProps> = ({ onImport }) => {
         onChange={handleFileChange}
       />
       <a
-        href={`data:text/csv,` + encodeURIComponent(
+        href={`data:text/csv;charset=utf-8,` + encodeURIComponent(
           [
             'type,name,amount,date,frequency,occurrence,stopDate,customDates',
-            'bill,Electricity,50,01/05/2025,monthly,12,01/05/2026,',
-            'paycheck,Salary,2000,05/05/2025,bi-weekly,,01/12/2025,',
-            'purchase,Groceries,120,03/05/2025,one-time,,,10/05/2025 15/05/2025'
+            'bill,Rent,1500,01/01/2025,monthly,,01/01/2026,',
+            'paycheck,Work Salary,3000,15/01/2025,bi-weekly,,,,',
+            'purchase,Laptop,1000,10/01/2025,one-time,,,,',
+            'bill,Car Loan,300,05/01/2025,monthly,24,,',
+            'purchase,Gym Membership,50,01/01/2025,one-time,,,01/01/2025 01/04/2025 01/07/2025' // Custom dates example
           ].join('\n')
         )}
         download="doughflow-template.csv"
